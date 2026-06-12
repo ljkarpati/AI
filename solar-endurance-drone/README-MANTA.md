@@ -49,8 +49,8 @@ boost MPPT 25.2 V → pack lead), just 16 cells (~$240 total).
 
 | Part | Qty | ~$ |
 |---|---|---|
-| 2814 900KV motor (pusher, rear plate) | 1 | 36 |
-| 9×6 props (pusher rotation) + spares | 4 | 12 |
+| 2814 900KV motor (hidden inside the tail nacelle) | 1 | 36 |
+| 9×6 folding pusher prop (folds for belly landings) + spares | 2 | 18 |
 | 40 A ESC with 5 V BEC | 1 | 30 |
 | 9–12 g metal-gear servos (elevons) | 2 | 16 |
 | Carbon: 2× Ø10 spar tube, Ø5 rod (cut lengths echoed by the SCAD) | — | 30 |
@@ -68,10 +68,13 @@ boost MPPT 25.2 V → pack lead), just 16 cells (~$240 total).
 - Spars slide through the body's angled channels into both wing halves; Ø5 pins
   stop rotation; tape the root joints (field-removable). Elevons tape-hinge on
   the angled hinge line; servos in the segment-3 pockets.
-- Battery sits in the body over the CG dimples (it IS the trim weight); O4 unit
-  behind it with the side vents, camera on the hatch shelf; motor on the rear
-  plate — the prop plane sits 50 mm behind the trailing edge so blades clear
-  the inner wing.
+- Battery sits inside the blended body over the CG dimples (it IS the trim
+  weight); the O4 unit rides behind it, its camera looking out through the round
+  nose aperture. The motor hides inside the integrated tail nacelle — the prop
+  spins well clear of the wing's trailing edge. Use the folding prop (or stop
+  the blades horizontal) before belly landings.
+- Gloss white finish: wet-sand the LW-PLA at 400 grit, white filler-primer/base,
+  then 2K clear coat — it also seals and stiffens the foamed plastic.
 
 ## 6. Flying it autonomously
 

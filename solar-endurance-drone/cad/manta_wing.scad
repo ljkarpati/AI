@@ -44,7 +44,6 @@ hinge_frac = 0.72;    // elevon hinge at 72% chord, z 350..700
 elev_start = 350;
 
 spar_d = 10.4;  pin_d = 5.4;  m3 = 3.4;
-cam_tilt = 8;
 
 /* ---------------- derived geometry ---------------- */
 lam        = tip/root;
@@ -138,82 +137,95 @@ module wing_seg(n) {
     }
 }
 
-/* ---------------- center body ---------------- */
-// Straight prism of the root section, z = -body_w/2..+body_w/2.
-// Bays: battery over the CG, O4 + FC behind it, pusher motor
-// mount cantilevered off the trailing edge.
+/* ---------------- center body (blended) ---------------- */
+// Smooth blended-wing-body: the wing root section lofts into a
+// fatter 420 mm / 16% centerline section (cosine blend), so the
+// battery, O4 and FC all fit INSIDE — no riser, no boxes. The
+// camera looks out through a round aperture in the nose; the
+// pusher motor hides inside an integrated teardrop nacelle on
+// the aft centerline (no more bolt-on arms).
+ctr_scale_c = 420/root;                 // centerline chord / root chord
+ctr_scale_t = (0.16*420)/(0.12*root);   // centerline thickness scale
+nac_y       = 8;                        // nacelle axis height over chord line
+
+function bw(zb) = (1 + cos(180*zb/(body_w/2)))/2;   // 1 center -> 0 root
+
+module body_slice(zb) {
+    w = bw(abs(zb));
+    translate([0,0,zb]) linear_extrude(height=0.6, center=true)
+        scale([1+(ctr_scale_c-1)*w, 1+(ctr_scale_t-1)*w])
+            translate([-0.25*root, 0]) polygon(af(root, 0.02, 0.4, 0.12));
+}
+
+module body_loft() {
+    zs = [-body_w/2, -body_w/3, -body_w/6, 0,
+           body_w/6,  body_w/3,  body_w/2];
+    for (i=[0:len(zs)-2]) hull() { body_slice(zs[i]); body_slice(zs[i+1]); }
+}
+
+module nacelle_form() {     // smooth teardrop, motor lives inside
+    hull() {
+        translate([170, nac_y, 0]) sphere(r=9);
+        translate([265, nac_y, 0]) sphere(r=26);
+        translate([330, nac_y, 0]) sphere(r=24);
+        translate([404, nac_y, 0]) sphere(r=14);
+    }
+}
+
+module hatch_box() { translate([-0.25*root+40, 6, -22]) cube([190, 60, 44]); }
+
 module body() {
     difference() {
-        union() {
-            translate([0,0,-body_w/2]) linear_extrude(height=body_w)
-                translate([-0.25*root, 0]) polygon(af(root, 0.02, 0.4, 0.12));
-            // motor mount: 2 arms + plate, prop plane 50mm aft of TE
-            for (z=[-16, 12]) translate([0.75*root-30, -3, z])
-                cube([root*0.25+80-(0.75*root-30)+50, 14, 4]);
-            translate([0.75*root+46, -3+7, 0]) rotate([0,90,0]) hull() {
-                translate([0,-16,0]) cylinder(d=8, h=4);
-                translate([0, 16,0]) cylinder(d=8, h=4);
-                translate([16,0,0]) cylinder(d=8, h=4);
-                translate([-16,0,0]) cylinder(d=8, h=4);
-            }
-        }
-        // main cavity (leave 2.6 walls + thick LE)
-        translate([-0.25*root+24, -13, -body_w/2+2.6])
-            cube([0.70*root-24, 30, body_w-5.2]);
-        // hatch opening on top
-        translate([-0.25*root+30, 5, -28]) cube([170, 40, 56]);
-        // spar channels into both wing roots (meet at center)
-        for (s=[0,1]) mirror([0,0,s])
-            angled_hole(0, 5, slope, spar_d, 0, body_w/2+1);
-        for (s=[0,1]) mirror([0,0,s])
-            angled_hole((0.65-0.25)*root, 4, 0.377, pin_d, 0, body_w/2+1);
-        // motor bolt slots 16x16..19x19 + shaft hole
-        translate([0.75*root+45, 4, 0]) rotate([0,90,0]) {
-            translate([0,0,-1]) cylinder(d=10, h=8);
+        union() { body_loft(); nacelle_form(); }
+        // main cavity (battery over the CG, electronics behind)
+        translate([-0.25*root+22, -12, -body_w/2+8])
+            cube([0.62*root, 26, body_w-16]);
+        // nose camera bay + lens aperture (O4 cam looks out the LE)
+        translate([-0.25*root-6, -8, -14]) cube([38, 18, 28]);
+        translate([-0.25*root-12, 2, 0]) rotate([0,90,0]) cylinder(d=20, h=16);
+        // motor cavity (2814 fits Ø36) + face slots 16x16..19x19 + shaft
+        translate([368, nac_y, 0]) rotate([0,90,0]) cylinder(d=36, h=60);
+        translate([402, nac_y, 0]) rotate([0,90,0]) {
+            cylinder(d=10, h=20);
             for (a=[45,135,225,315]) rotate([0,0,a]) hull() {
-                translate([8,0,-1])    cylinder(d=m3, h=8);
-                translate([13.5,0,-1]) cylinder(d=m3, h=8);
+                translate([8,0,0])    cylinder(d=m3, h=20);
+                translate([13.5,0,0]) cylinder(d=m3, h=20);
             }
         }
+        // nacelle cooling intake (top) — motor heat must escape
+        translate([245, nac_y+18, 0]) cylinder(d=10, h=20, center=true);
+        // spar + pin channels into both wing roots (meet at center)
+        for (s=[0,1]) mirror([0,0,s]) {
+            angled_hole(0, 5, slope, spar_d, 0, body_w/2+1);
+            angled_hole((0.65-0.25)*root, 4, 0.377, pin_d, 0, body_w/2+1);
+        }
+        // flush hatch opening (the cut piece prints as the lid)
+        hatch_box();
         // hatch screws
-        for (x=[-0.25*root+38, -0.25*root+188]) translate([x, 18, 0])
-            rotate([-90,0,0]) cylinder(d=m3, h=30);
+        for (x=[-0.25*root+52, -0.25*root+215]) translate([x, 12, 0])
+            rotate([-90,0,0]) cylinder(d=m3, h=46);
         // CG dimples on the belly — balance HERE
-        for (z=[-30, 30]) translate([cg_x, -0.06*root, z]) sphere(d=5);
-        // cooling inlets (O4 bay) + rear outlet
-        for (z=[-1,1]) translate([0.45*root, 0, z*body_w/2])
-            rotate([z*90,0,0]) cylinder(d=12, h=8, center=true);
+        for (z=[-26, 26]) translate([cg_x, -0.07*root, z]) sphere(d=5);
     }
 }
 
-// lid: flat plate + raised battery box (pack sits proud of the
-// section) + O4 camera shelf peeking over the leading edge
+// the lid IS the cut-out skin: identical curvature, flush fit.
+// Slice with 0.3 mm XY compensation (or scale 99.5% in XZ).
 module hatch() {
     difference() {
-        union() {
-            translate([0,0,0])  cube([168, 54, 2.4]);
-            translate([2,2,-3]) cube([164, 50, 3.2]);          // lip
-            translate([8,4,2.4]) cube([150, 46, 12]);          // battery riser
-            translate([0,15,2.4]) rotate([0, 0, 0])
-                translate([-26,0,0]) rotate([0,-cam_tilt,0])
-                    cube([28, 24, 16]);                        // cam shelf
-        }
-        translate([10,6,0]) cube([146, 42, 16]);               // riser hollow
-        translate([-24, 16.1, 4]) rotate([0,-cam_tilt,0])
-            cube([30, 21.8, 20]);   // cam pocket — set to your O4 cam width
-        for (x=[8, 158]) translate([x, 27, -4]) cylinder(d=m3, h=10);
+        intersection() { body_loft(); hatch_box(); }
+        translate([0,-3,0]) hatch_box();    // keep 3 mm of skin
     }
 }
 
-/* ---------------- winglet ---------------- */
+/* ---------------- winglet (raked) ---------------- */
 module winglet() {
-    difference() {
-        union() {
-            linear_extrude(height=2.5)
-                polygon([[0,0],[tip*0.85,0],[tip*0.75,110],[tip*0.35,120],[tip*0.12,30]]);
-            for (f=[0.32,0.62]) translate([f*tip*0.85-6, -8, 0])
-                cube([12, 9, 2.5]);                            // tabs
-        }
+    union() {
+        linear_extrude(height=2.5)
+            polygon([[0,0],[tip*0.80,0],[tip*0.98,35],[tip*0.78,95],
+                     [tip*0.45,105],[tip*0.16,40]]);
+        for (f=[0.32,0.62]) translate([f*tip*0.80-6, -8, 0])
+            cube([12, 9, 2.5]);                                // tabs
     }
 }
 
