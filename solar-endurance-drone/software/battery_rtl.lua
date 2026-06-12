@@ -18,13 +18,19 @@
 -- independent layers, plus the Pi script makes three.
 -- ============================================================
 
+-- "copter" for HELIOS-10, "plane" for SKYLARK-1600 / MANTA-1500
+local VEHICLE       = "copter"
+
 local RTL_PCT       = 10    -- force RTL at or below this %
-local LAND_PCT      = 5     -- force LAND at or below this %
+local LAND_PCT      = 5     -- critical threshold
 local RETRIGGER_MS  = 15000 -- re-assert if pilot overrides while low
-local MODE_AUTO     = 3
-local MODE_RTL      = 6
-local MODE_LAND     = 9
-local MODE_SMARTRTL = 21
+
+-- mode numbers differ between Copter and Plane firmwares.
+-- A plane can't hover-land, so its critical action is RTL too
+-- (add a DO_LAND_START sequence to your mission for full auto-land).
+local MODE_RTL      = (VEHICLE == "plane") and 11 or 6
+local MODE_LAND     = (VEHICLE == "plane") and 11 or 9
+local MODE_SMARTRTL = (VEHICLE == "plane") and 11 or 21
 
 local MAV_WARN = 4
 local MAV_INFO = 6

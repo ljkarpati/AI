@@ -1,0 +1,101 @@
+# ============================================================
+# MANTA-1500 — ArduPilot Plane parameters (Plane 4.5+)
+# Target FC: Matek H743-SLIM, FLYING WING (elevons):
+#   SERVO1 left elevon, SERVO2 right elevon, SERVO3 throttle.
+#
+# Same UART wiring as HELIOS-10:
+#   UART2 DJI O4 (MSP DisplayPort) / UART4 GPS / UART6 ELRS /
+#   UART7 Raspberry Pi (MAVLink2 921600)
+#
+# ELEVON CHECK before first flight (FBWA, on the bench):
+#  - nose UP   -> BOTH elevons UP
+#  - roll RIGHT-> left elevon DOWN, right elevon UP
+# Wrong directions: flip SERVOx_REVERSED, never the RC sticks.
+# Balance on the molded CG dimples — a tail-heavy wing is
+# unflyable, a slightly nose-heavy one just lands sooner.
+# ============================================================
+
+# ---- battery: same 6S2P Li-Ion 10,000 mAh pack as HELIOS-10 ----
+BATT_MONITOR,4
+BATT_CAPACITY,10000
+# ---- THE 10% RULE (layer 1): RTL at 1,000 mAh remaining ----
+BATT_LOW_MAH,1000
+BATT_FS_LOW_ACT,1
+BATT_CRT_MAH,500
+BATT_FS_CRT_ACT,1
+BATT_LOW_VOLT,18.0
+BATT_CRT_VOLT,16.8
+BATT_FS_VOLTSRC,1
+BATT_ARM_VOLT,24.0
+
+# ---- elevon mixing ----
+SERVO1_FUNCTION,77
+SERVO2_FUNCTION,78
+SERVO3_FUNCTION,70
+MIXING_GAIN,0.5
+SERVO_AUTO_TRIM,1
+
+# ---- speeds & limits (synthetic airspeed; pitot optional) ----
+ARSPD_TYPE,0
+AIRSPEED_MIN,11
+AIRSPEED_CRUISE,15
+AIRSPEED_MAX,28
+ROLL_LIMIT_DEG,50
+PTCH_LIM_MAX_DEG,20
+PTCH_LIM_MIN_DEG,-22
+THR_MAX,80
+TRIM_THROTTLE,30
+
+# ---- hand launch (grip the belly behind the CG, firm level throw;
+#      the pusher prop spools up only after the acceleration spike) ----
+TKOFF_THR_MINACC,4
+TKOFF_THR_DELAY,3
+TKOFF_LVL_PITCH,10
+
+# ---- RC loss: hold 2 s, then RTL ----
+FS_SHORT_ACTN,0
+FS_LONG_ACTN,1
+FS_LONG_TIMEOUT,20
+
+# ---- home behavior ----
+RTL_RADIUS,90
+ALT_HOLD_RTL,6000
+
+# ---- geofence ----
+FENCE_ENABLE,1
+FENCE_TYPE,7
+FENCE_RADIUS,800
+FENCE_ALT_MAX,120
+FENCE_ACTION,1
+
+# ---- Lua guardian (layer 2) — set VEHICLE="plane" in the script ----
+SCR_ENABLE,1
+SCR_HEAP_SIZE,102400
+
+# ---- DJI O4 OSD / GPS / ELRS / Pi — identical to HELIOS-10 ----
+SERIAL2_PROTOCOL,42
+SERIAL2_BAUD,115
+OSD_TYPE,5
+OSD1_BAT_VOLT_EN,1
+OSD1_CURRENT_EN,1
+OSD1_BATUSED_EN,1
+OSD1_HOMEDIST_EN,1
+OSD1_GSPEED_EN,1
+OSD1_ALTITUDE_EN,1
+SERIAL4_PROTOCOL,5
+GPS1_TYPE,1
+SERIAL6_PROTOCOL,23
+RSSI_TYPE,3
+SERIAL7_PROTOCOL,2
+SERIAL7_BAUD,921
+
+# ---- mode switch ----
+FLTMODE1,5
+FLTMODE2,7
+FLTMODE3,2
+FLTMODE4,10
+FLTMODE5,11
+FLTMODE6,12
+
+ARMING_CHECK,1
+BRD_SAFETY_DEFLT,0

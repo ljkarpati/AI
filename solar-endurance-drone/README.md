@@ -1,4 +1,31 @@
-# HELIOS-10 — solar-cycled, 1-hour autonomous quad with DJI O4 Air Unit Pro
+# Solar endurance fleet — three 3D-printed autonomous aircraft, one shared system
+
+Three airframes, one ecosystem: every aircraft flies the **same 6S2P Li-Ion pack,
+DJI O4 Air Unit Pro, Matek H743 flight controller, charger, solar ground station,
+radio and autonomy software** (which auto-detects copter vs. plane). Build one,
+and the next one is just an airframe.
+
+| | **HELIOS-10** (quad) | **SKYLARK-1600** (plane) | **MANTA-1500** (flying wing) |
+|---|---|---|---|
+| Endurance (battery) | ~72 min hover / 60+ min missions | **~3 h** | **~3.5 h** |
+| Cruise/hover power | 154 W | 61 W | 53 W |
+| Range (still air) | ~25 km | ~150 km | ~170 km |
+| Onboard solar at midday | ~3 W (2% — physics says no) | ~33 W (+55% endurance) | ~44 W (**8–10 h** in summer sun) |
+| Takeoff / landing | anywhere, vertical | hand launch / belly land | hand launch / belly land |
+| Strengths | hover, precision, tight spaces | stable camera, easy to fly | max endurance + solar |
+| Docs | this file | [README-SKYLARK.md](README-SKYLARK.md) | [README-MANTA.md](README-MANTA.md) |
+
+The fixed wings exist because of one number: a wing makes lift from forward motion,
+so the plane cruises on **61 W** while the quad burns **154 W** to hover the same
+electronics. Same battery, triple the air time — and enough sun-facing wing area
+that onboard solar finally earns its weight (§4a explains why it can't on the quad).
+
+The rest of this file documents **HELIOS-10**, the quad — plus the shared solar
+station math (§4b), wiring (§6), and autonomy stack (§7) used by all three.
+
+---
+
+## HELIOS-10 — solar-cycled, 1-hour autonomous quad
 
 A 10-inch, Li-Ion powered, 3D-printed endurance quadcopter designed around four goals:
 
@@ -11,11 +38,18 @@ A 10-inch, Li-Ion powered, 3D-printed endurance quadcopter designed around four 
 
 ```
 solar-endurance-drone/
-├── cad/helios10_frame.scad        ← 3D print files (parametric OpenSCAD → export STL)
-├── ardupilot/helios10.param       ← flight controller config (10% RTL failsafe = layer 1)
-└── software/
+├── cad/
+│   ├── helios10_frame.scad        ← quad frame (parametric OpenSCAD → export STL)
+│   ├── skylark_plane.scad         ← 1.6 m plane: pod, wing, tail
+│   └── manta_wing.scad            ← 1.5 m flying wing (computes its own CG)
+├── ardupilot/
+│   ├── helios10.param             ← quad config (10% RTL failsafe = layer 1)
+│   ├── skylark-plane.param        ← plane config (same failsafes + hand launch)
+│   └── manta-wing.param           ← wing config (elevon mixing)
+└── software/                      ← SHARED by all three aircraft
     ├── battery_rtl.lua            ← runs ON the FC, forces RTL at 10% (layer 2)
-    ├── mission_guardian.py        ← Pi companion: uploads paths, guards battery (layer 3)
+    ├── mission_guardian.py        ← uploads paths, guards battery (layer 3;
+    │                                 auto-detects copter vs plane)
     └── mission_example.yaml       ← predetermined path format
 ```
 
@@ -174,7 +208,7 @@ Assembly: epoxy or clamp tubes into hub + pods (pinch bolts included in the desi
 The "AI" here is the same layered autonomy commercial drones use: a GPS waypoint autopilot + scripted decision logic + an extension hook for smarter brains.
 
 1. **Layer 1 — autopilot failsafe** (`ardupilot/helios10.param`): ArduPilot itself triggers RTL at 1,000 mAh remaining (= 10% of the 10 Ah pack) and LAND at 5%, with sag-compensated voltage backstops. Works with everything else dead.
-2. **Layer 2 — onboard Lua** (`software/battery_rtl.lua`): drop onto the FC's SD card (`APM/scripts/`). Independently forces RTL ≤10% / LAND ≤5% and re-asserts every 15 s if overridden.
+2. **Layer 2 — onboard Lua** (`software/battery_rtl.lua`): drop onto the FC's SD card (`APM/scripts/`). Independently forces RTL ≤10% / LAND ≤5% and re-asserts every 15 s if overridden. One config line at the top selects `"copter"` or `"plane"`.
 3. **Layer 3 — companion computer** (`software/mission_guardian.py` on the Pi): uploads your predetermined path, refuses to launch below 95% charge or without 3D GPS, watches the battery cross-checked against a Li-Ion voltage curve (trusts whichever reads *lower*), forces RTL/LAND, and exposes `ai_decision_hook()` — drop your own logic in there. For camera-based AI (tracking/detection) later, swap the Pi Zero for a Pi 5 + camera module; note the O4's video goes to your goggles, not the Pi.
 
 ```bash

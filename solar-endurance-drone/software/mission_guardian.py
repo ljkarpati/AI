@@ -49,11 +49,15 @@ import time
 import yaml
 from pymavlink import mavutil
 
-# ---------------- ArduCopter flight modes ----------------
-MODES = {"STABILIZE": 0, "ALT_HOLD": 2, "AUTO": 3, "GUIDED": 4,
-         "LOITER": 5, "RTL": 6, "LAND": 9, "SMART_RTL": 21}
-MODE_NAMES = {v: k for k, v in MODES.items()}
-SAFE_MODES = {MODES["RTL"], MODES["LAND"], MODES["SMART_RTL"]}
+# ---------------- ArduPilot flight modes ----------------
+# Mode numbers differ between Copter (HELIOS-10) and Plane
+# (SKYLARK / MANTA). The vehicle type is auto-detected from the
+# heartbeat, or forced with --vehicle.
+COPTER_MODES = {"STABILIZE": 0, "ALT_HOLD": 2, "AUTO": 3, "GUIDED": 4,
+                "LOITER": 5, "RTL": 6, "LAND": 9, "SMART_RTL": 21}
+PLANE_MODES = {"MANUAL": 0, "CIRCLE": 1, "STABILIZE": 2, "FBWA": 5,
+               "FBWB": 6, "CRUISE": 7, "AUTO": 10, "RTL": 11,
+               "LOITER": 12, "GUIDED": 15}
 
 # Li-Ion (e.g. Molicel 21700) per-cell voltage -> % remaining,
 # light-load curve. Deliberately conservative.
@@ -112,9 +116,27 @@ class Guardian:
             self.m = mavutil.mavlink_connection(args.conn)
         else:
             self.m = mavutil.mavlink_connection(args.conn, baud=args.baud)
-        self.m.wait_heartbeat()
+        hb = self.m.wait_heartbeat()
         print(f"[conn] heartbeat from sys {self.m.target_system} "
               f"comp {self.m.target_component}")
+
+        # ---- vehicle type: copter or plane ----
+        if args.vehicle == "auto":
+            self.vehicle = ("plane"
+                            if hb.type == mavutil.mavlink.MAV_TYPE_FIXED_WING
+                            else "copter")
+        else:
+            self.vehicle = args.vehicle
+        self.MODES = PLANE_MODES if self.vehicle == "plane" else COPTER_MODES
+        self.MODE_NAMES = {v: k for k, v in self.MODES.items()}
+        self.SAFE_MODES = ({PLANE_MODES["RTL"]} if self.vehicle == "plane"
+                           else {COPTER_MODES["RTL"], COPTER_MODES["LAND"],
+                                 COPTER_MODES["SMART_RTL"]})
+        # critical battery action: copter can land where it is; a plane
+        # can't hover, so critical = RTL too (add a DO_LAND_START landing
+        # sequence to the mission for full auto-land).
+        self.crit_mode = ("RTL" if self.vehicle == "plane" else "LAND")
+        print(f"[conn] vehicle type: {self.vehicle.upper()}")
         # ask for telemetry at 4 Hz
         self.m.mav.request_data_stream_send(
             self.m.target_system, self.m.target_component,
@@ -166,8 +188,10 @@ class Guardian:
         wps = plan["waypoints"]
         # item 0 = home placeholder (autopilot replaces it)
         add(0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
-        # takeoff
+        # takeoff — for a plane, p1 is the climb-out pitch and the
+        # mission starts when you hand-launch (TKOFF_THR_MINACC)
         add(FR, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            p1=(15 if self.vehicle == "plane" else 0),
             z=plan.get("takeoff_alt", 30))
         # cruise speed (ground speed, m/s)
         if "cruise_speed" in plan:
@@ -280,7 +304,7 @@ class Guardian:
             s = self.read_state()
             if s["mode"] is None:
                 continue
-            mode_name = MODE_NAMES.get(s["mode"], str(s["mode"]))
+            mode_name = self.MODE_NAMES.get(s["mode"], str(s["mode"]))
             if s["pct"] is not None:
                 print(f"[{time.strftime('%H:%M:%S')}] {mode_name:9s} "
                       f"batt {s['pct']:5.1f}% {s['voltage'] or 0:5.1f}V "
@@ -301,16 +325,18 @@ class Guardian:
             self.crit_hits = self.crit_hits + 1 if s["pct"] <= a.land_pct else 0
 
             override = ai_decision_hook(s)
-            if override in MODES and s["mode"] != MODES[override]:
-                self.force_mode(MODES[override], f"{override} (ai hook)")
+            if override in self.MODES and s["mode"] != self.MODES[override]:
+                self.force_mode(self.MODES[override], f"{override} (ai hook)")
 
-            if self.crit_hits >= 3 and s["mode"] != MODES["LAND"]:
-                print(f"[guardian] *** {s['pct']:.0f}% CRITICAL -> LAND ***")
-                self.force_mode(MODES["LAND"], "LAND")
-            elif self.low_hits >= 3 and s["mode"] not in SAFE_MODES:
+            crit_id = self.MODES[self.crit_mode]
+            if self.crit_hits >= 3 and s["mode"] != crit_id:
+                print(f"[guardian] *** {s['pct']:.0f}% CRITICAL "
+                      f"-> {self.crit_mode} ***")
+                self.force_mode(crit_id, self.crit_mode)
+            elif self.low_hits >= 3 and s["mode"] not in self.SAFE_MODES:
                 print(f"[guardian] *** {s['pct']:.0f}% <= {a.rtl_pct}% "
                       f"-> RETURN TO LAUNCH ***")
-                self.force_mode(MODES["RTL"], "RTL")
+                self.force_mode(self.MODES["RTL"], "RTL")
 
     # ---------------- top level ----------------
     def run(self):
@@ -328,11 +354,15 @@ class Guardian:
                 return
             if not self.wait_gps_and_battery():
                 sys.exit(1)
-            if not self.force_mode(MODES["AUTO"], "AUTO"):
+            if not self.force_mode(self.MODES["AUTO"], "AUTO"):
                 sys.exit(1)
             if not self.arm():
                 sys.exit(1)
-            print("[mission] LAUNCHED — guardian active.")
+            if self.vehicle == "plane":
+                print("[mission] ARMED in AUTO — hand-launch when ready "
+                      "(throttle starts on the throw).")
+            else:
+                print("[mission] LAUNCHED — guardian active.")
         else:
             print("[guardian] monitor-only: you fly, I watch the battery.")
         self.monitor()
@@ -345,6 +375,8 @@ def main():
     p.add_argument("--baud", type=int, default=921600)
     p.add_argument("--mission", help="YAML mission file")
     p.add_argument("--cells", type=int, default=6, help="Li-Ion series cells")
+    p.add_argument("--vehicle", choices=["auto", "copter", "plane"],
+                   default="auto", help="airframe type (default: auto-detect)")
     p.add_argument("--rtl-pct", type=float, default=10.0)
     p.add_argument("--land-pct", type=float, default=5.0)
     p.add_argument("--min-start-pct", type=float, default=95.0)

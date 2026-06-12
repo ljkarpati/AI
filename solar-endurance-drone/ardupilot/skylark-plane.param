@@ -1,0 +1,101 @@
+# ============================================================
+# SKYLARK-1600 — ArduPilot Plane parameters (Plane 4.5+)
+# Target FC: Matek H743-SLIM, conventional plane:
+#   SERVO1 aileron(s), SERVO2 elevator, SERVO3 throttle,
+#   SERVO4 rudder.
+#
+# Same UART wiring as HELIOS-10:
+#   UART2 DJI O4 (MSP DisplayPort) / UART4 GPS / UART6 ELRS /
+#   UART7 Raspberry Pi (MAVLink2 921600)
+#
+# After loading: accel/compass/RC cal, set servo reverses so
+# surfaces move correctly in FBWA (nose up -> elevator UP etc.),
+# check motor direction, then bench-test all failsafes props-off.
+# ============================================================
+
+# ---- battery: same 6S2P Li-Ion 10,000 mAh pack as HELIOS-10 ----
+BATT_MONITOR,4
+BATT_CAPACITY,10000
+# ---- THE 10% RULE (layer 1): RTL at 1,000 mAh remaining ----
+# A plane cannot hover-land, so critical action is RTL as well;
+# add a DO_LAND_START landing sequence to missions for auto-land.
+BATT_LOW_MAH,1000
+BATT_FS_LOW_ACT,1
+BATT_CRT_MAH,500
+BATT_FS_CRT_ACT,1
+BATT_LOW_VOLT,18.0
+BATT_CRT_VOLT,16.8
+BATT_FS_VOLTSRC,1
+BATT_ARM_VOLT,24.0
+
+# ---- control surfaces ----
+SERVO1_FUNCTION,4
+SERVO2_FUNCTION,19
+SERVO3_FUNCTION,70
+SERVO4_FUNCTION,21
+SERVO_AUTO_TRIM,1
+
+# ---- speeds & attitude limits (no airspeed sensor: synthetic) ----
+# Optional Matek ASPD-4525 pitot: set ARSPD_TYPE,1 + ARSPD_USE,1
+ARSPD_TYPE,0
+AIRSPEED_MIN,10
+AIRSPEED_CRUISE,14
+AIRSPEED_MAX,25
+ROLL_LIMIT_DEG,45
+PTCH_LIM_MAX_DEG,20
+PTCH_LIM_MIN_DEG,-25
+THR_MAX,80
+TRIM_THROTTLE,32
+
+# ---- hand launch: arm in AUTO, throw, motor spools on the throw ----
+TKOFF_THR_MINACC,4
+TKOFF_THR_DELAY,2
+TKOFF_LVL_PITCH,12
+
+# ---- RC loss: hold course 2 s (short), then RTL (long) ----
+FS_SHORT_ACTN,0
+FS_LONG_ACTN,1
+FS_LONG_TIMEOUT,20
+
+# ---- home behavior: circle overhead at 60 m ----
+RTL_RADIUS,80
+ALT_HOLD_RTL,6000
+
+# ---- geofence (wider than the quad: planes need turning room) ----
+FENCE_ENABLE,1
+FENCE_TYPE,7
+FENCE_RADIUS,800
+FENCE_ALT_MAX,120
+FENCE_ACTION,1
+
+# ---- Lua guardian (layer 2) — set VEHICLE="plane" in the script ----
+SCR_ENABLE,1
+SCR_HEAP_SIZE,102400
+
+# ---- DJI O4 OSD / GPS / ELRS / Pi — identical to HELIOS-10 ----
+SERIAL2_PROTOCOL,42
+SERIAL2_BAUD,115
+OSD_TYPE,5
+OSD1_BAT_VOLT_EN,1
+OSD1_CURRENT_EN,1
+OSD1_BATUSED_EN,1
+OSD1_HOMEDIST_EN,1
+OSD1_GSPEED_EN,1
+OSD1_ALTITUDE_EN,1
+SERIAL4_PROTOCOL,5
+GPS1_TYPE,1
+SERIAL6_PROTOCOL,23
+RSSI_TYPE,3
+SERIAL7_PROTOCOL,2
+SERIAL7_BAUD,921
+
+# ---- mode switch: FBWA / CRUISE / STABILIZE / AUTO / RTL / LOITER ----
+FLTMODE1,5
+FLTMODE2,7
+FLTMODE3,2
+FLTMODE4,10
+FLTMODE5,11
+FLTMODE6,12
+
+ARMING_CHECK,1
+BRD_SAFETY_DEFLT,0
