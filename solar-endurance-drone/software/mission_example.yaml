@@ -1,0 +1,23 @@
+# HELIOS-10 example mission — EDIT THESE before flying.
+# Coordinates below are the ArduPilot SITL default field (Zurich);
+# replace with your own. alt is meters ABOVE the takeoff point.
+#
+# Usage:
+#   python3 mission_guardian.py --conn /dev/serial0 --baud 921600 \
+#       --mission mission_example.yaml
+#
+# Endurance tips baked into the defaults:
+#  - cruise_speed 8 m/s is near this airframe's best range speed;
+#    a slow forward cruise actually draws LESS power than hovering.
+#  - keep legs short and turns wide; every hard stop costs energy.
+
+takeoff_alt: 30        # m
+cruise_speed: 8        # m/s ground speed
+rtl_at_end: true       # always come home at the end
+
+waypoints:
+  - {lat: 47.397742, lon: 8.545594, alt: 40}
+  - {lat: 47.399900, lon: 8.545594, alt: 40, hold: 5}   # hold = loiter seconds
+  - {lat: 47.399900, lon: 8.548800, alt: 50}
+  - {lat: 47.397742, lon: 8.548800, alt: 50, hold: 5}
+  - {lat: 47.397742, lon: 8.545594, alt: 40}

@@ -1,0 +1,115 @@
+# ============================================================
+# HELIOS-10 — ArduPilot Copter parameters (Copter 4.5+)
+# Target FC: Matek H743-SLIM (or any H743 ArduPilot board)
+#
+# Load via Mission Planner: CONFIG > Full Parameter List >
+# Load from file > write params > reboot.
+#
+# THEN still do: accel cal, compass cal, RC cal, ESC direction
+# check (props OFF), battery-monitor calibration, and a first
+# hover + Autotune in a wide-open field.
+#
+# Wiring assumed (adjust SERIALx if you wire differently):
+#   UART2 -> DJI O4 Air Unit Pro (OSD via MSP DisplayPort)
+#   UART4 -> Matek M10Q GPS (compass on I2C SDA/SCL)
+#   UART6 -> ExpressLRS receiver (CRSF)
+#   UART7 -> Raspberry Pi Zero 2 W (MAVLink2, 921600)
+# ============================================================
+
+# ---- airframe ----
+FRAME_CLASS,1
+FRAME_TYPE,1
+# DShot600 to a BLHeli_32 4-in-1; motor order/dir per ArduPilot docs
+MOT_PWM_TYPE,6
+SERVO_BLH_AUTO,1
+# 10" props: soft thrust curve, gentle spin-up
+MOT_THST_EXPO,0.75
+MOT_SPIN_ARM,0.05
+MOT_SPIN_MIN,0.08
+MOT_BAT_VOLT_MAX,25.2
+MOT_BAT_VOLT_MIN,16.8
+# efficiency: cap lean angle, calmer than racing defaults
+ANGLE_MAX,3000
+
+# ---- battery monitor: 6S2P Li-Ion 21700, 10,000 mAh ----
+BATT_MONITOR,4
+BATT_CAPACITY,10000
+# calibrate BATT_AMP_PERVLT against a charger/wattmeter for an
+# accurate % — the 10% failsafe depends on it!
+
+# ============================================================
+# THE 10% RULE — safety layer 1 (autopilot failsafe)
+# 10% of 10,000 mAh left -> RTL.  5% left -> LAND.
+# Voltage backstops in case current calibration drifts:
+# 3.0 V/cell low (18.0 V), 2.8 V/cell critical (16.8 V),
+# sag-compensated source so punch-outs don't false-trigger.
+# ============================================================
+BATT_LOW_MAH,1000
+BATT_FS_LOW_ACT,2
+BATT_CRT_MAH,500
+BATT_FS_CRT_ACT,1
+BATT_LOW_VOLT,18.0
+BATT_CRT_VOLT,16.8
+BATT_FS_VOLTSRC,1
+BATT_LOW_TIMER,10
+# refuse to arm below ~4.0 V/cell — hour-long missions need a full pack
+BATT_ARM_VOLT,24.0
+
+# ---- RC / link failsafes ----
+FS_THR_ENABLE,1
+RTL_ALT,3000
+RTL_LOIT_TIME,5000
+LAND_SPEED,50
+
+# ---- geofence: stay inside a 500 m / 120 m bubble, RTL on breach ----
+FENCE_ENABLE,1
+FENCE_TYPE,7
+FENCE_RADIUS,500
+FENCE_ALT_MAX,120
+FENCE_ACTION,1
+
+# ---- autonomous missions ----
+# allow arming + takeoff in AUTO (mission_guardian.py uses this)
+AUTO_OPTIONS,3
+WPNAV_SPEED,800
+WPNAV_RADIUS,200
+
+# ---- Lua scripting (battery_rtl.lua = safety layer 2) ----
+SCR_ENABLE,1
+SCR_HEAP_SIZE,102400
+
+# ---- DJI O4 Air Unit Pro OSD (MSP DisplayPort on UART2) ----
+SERIAL2_PROTOCOL,42
+SERIAL2_BAUD,115
+OSD_TYPE,5
+# useful OSD panels: battery %, voltage, current, distance home
+OSD1_BAT_VOLT_EN,1
+OSD1_CURRENT_EN,1
+OSD1_BATUSED_EN,1
+OSD1_HOMEDIST_EN,1
+OSD1_GSPEED_EN,1
+OSD1_ALTITUDE_EN,1
+
+# ---- GPS on UART4 ----
+SERIAL4_PROTOCOL,5
+GPS1_TYPE,1
+
+# ---- ExpressLRS receiver on UART6 (CRSF) ----
+SERIAL6_PROTOCOL,23
+RSSI_TYPE,3
+
+# ---- Raspberry Pi companion on UART7 (MAVLink2) ----
+SERIAL7_PROTOCOL,2
+SERIAL7_BAUD,921
+
+# ---- flight modes on the mode switch ----
+FLTMODE1,5
+FLTMODE2,2
+FLTMODE3,0
+FLTMODE4,3
+FLTMODE5,6
+FLTMODE6,9
+
+# ---- keep all pre-arm checks ON ----
+ARMING_CHECK,1
+BRD_SAFETY_DEFLT,0
