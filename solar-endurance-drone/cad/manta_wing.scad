@@ -1,7 +1,9 @@
 // ============================================================
 //  MANTA-1500 — 3D-printed flying wing (tailless), 1.5 m span
-//  ~3.5 h cruise on the same 6S2P pack as HELIOS-10, and the
+//  ~3.2 h cruise on the same 6S2P pack as HELIOS-10, and the
 //  best canvas in the fleet for the onboard solar option.
+//  The prop is fully recessed in a trailing-edge slot — one
+//  continuous wing, nothing hanging outside the planform.
 //
 //  STABILITY comes from 25 deg sweep + 4 deg washout (the tip
 //  flies nose-down relative to the root) + correct CG. This
@@ -18,9 +20,9 @@
 //  2% gyroid, ~245C, tune flow first). Body + motor mount in
 //  PETG, 3 walls 30% infill.
 //
-//  PARTS: body(1) hatch(1) winglet(x2 mirrored)
+//  PARTS: body(1) fairing(x2 mirrored) hatch(1) winglet(x2)
 //         wing segments: part="wing_seg"; seg=1..4; side=+-1 (8)
-//         elevon: side=+-1 (2)
+//         elevon halves: part="elevon"; seg=1..2; side=+-1 (4)
 //
 //  BUY (echoed on F6): 2x O10 OD carbon tube (spars),
 //  O5 carbon rod (aft pins), see cut list in console.
@@ -38,10 +40,11 @@ sweep_le   = 25;      // leading-edge sweep, deg
 washout    = 4;       // tip nose-down twist, deg
 washout_dir= -1;      // flip if preview shows tip nose-UP (see header!)
 sm         = 0.08;    // static margin (8% MAC) for first flights
-body_w     = 100;     // center body width
-seg_len    = 175;     // 4 segments per half
-hinge_frac = 0.72;    // elevon hinge at 72% chord, z 350..700
-elev_start = 350;
+body_w     = 100;     // center body piece width (blend continues to 120)
+wing_z0    = 70;      // wing segments start here (fairings cover 0..70)
+seg_len    = (700-70)/4;   // 4 segments per half = 157.5 mm
+hinge_frac = 0.72;    // elevon hinge at 72% chord
+elev_start = 385;     // elevon spans segments 3-4 (z 385..700)
 
 spar_d = 10.4;  pin_d = 5.4;  m3 = 3.4;
 
@@ -119,7 +122,8 @@ module wing_half() {
     }
 }
 
-module elevon() {
+// elevon prints in two halves per side (tape-hinge both, share one horn)
+module elevon(n) {
     intersection() {
         difference() {
             wing_form();
@@ -127,81 +131,106 @@ module elevon() {
             translate([hinge_x(430)+8, -10, 425]) cube([16, 10, 3]);
         }
         elevon_cutter(1.2);
+        translate([-root, -60, elev_start + (n-1)*(700-elev_start)/2])
+            cube([3*root, 120, (700-elev_start)/2]);
     }
 }
 
 module wing_seg(n) {
     intersection() {
         wing_half();
-        translate([-root, -60, (n-1)*seg_len]) cube([3*root, 120, seg_len]);
+        translate([-root, -60, wing_z0 + (n-1)*seg_len])
+            cube([3*root, 120, seg_len]);
     }
 }
 
-/* ---------------- center body (blended) ---------------- */
-// Smooth blended-wing-body: the wing root section lofts into a
-// fatter 420 mm / 16% centerline section (cosine blend), so the
-// battery, O4 and FC all fit INSIDE — no riser, no boxes. The
-// camera looks out through a round aperture in the nose; the
-// pusher motor hides inside an integrated teardrop nacelle on
-// the aft centerline (no more bolt-on arms).
-ctr_scale_c = 420/root;                 // centerline chord / root chord
-ctr_scale_t = (0.16*420)/(0.12*root);   // centerline thickness scale
-nac_y       = 8;                        // nacelle axis height over chord line
+/* ------- center body (blended, recessed slot pusher) ------- */
+// ONE CONTINUOUS WING: the root section point-morphs into a fat
+// 470 mm centerline section across z = +-120, extending the
+// trailing edge into a solid deck — and the propeller spins
+// INSIDE a spanwise slot cut through that deck. Nothing hangs
+// outside the planform; the slot also shields the blades on
+// belly landings. Use a FIXED 8x6 prop (Ø204 mm) — a folding
+// prop can snag in the slot. The slot costs ~5% propulsive
+// efficiency vs an open pusher: endurance ~3.2 h.
+//
+// Printing: the blend region is wider than the body part, so it
+// splits into body (|z|<=50) + 2 mirrored "fairing" pieces
+// (50..120) + 4 wing segments per side starting at z=120.
+ctr_sc   = 470/root;                  // centerline chord scale (TE deck)
+ctr_st   = (0.16*420)/(0.12*root);    // centerline thickness scale
+blend_hw = 120;                       // blend half-width
+slot_x0  = 294;  slot_x1 = 318;       // fore-aft slot opening
+slot_hz  = 108;                       // slot half-span (prop tip 102 + gap)
+prop_x   = 306;                       // prop plane (echoed for reference)
+mot_y    = 8;                         // motor/prop axis height
 
-function bw(zb) = (1 + cos(180*zb/(body_w/2)))/2;   // 1 center -> 0 root
+base_pts = af(root, 0.02, 0.4, 0.12);
+// wing section points at local span zw (same math as wing_form)
+function wsec_pts(zw) =
+    let(u=zw/half, sx=1-(1-tipscale_c)*u, sy=1-(1-tipscale_t)*u, a=washout*u)
+    [for (p=base_pts) [sx*p[0]*cos(a) - sy*p[1]*sin(a) + slope*zw,
+                       sx*p[0]*sin(a) + sy*p[1]*cos(a)]];
+// blended body section at |z| <= blend_hw (cosine point-morph)
+function bsec_pts(z) =
+    let(w=(1+cos(180*z/blend_hw))/2,
+        ws=wsec_pts(max(0, abs(z)-body_w/2)))
+    [for (i=[0:len(ws)-1]) [(1-w)*ws[i][0] + w*ctr_sc*base_pts[i][0],
+                            (1-w)*ws[i][1] + w*ctr_st*base_pts[i][1]]];
 
-module body_slice(zb) {
-    w = bw(abs(zb));
-    translate([0,0,zb]) linear_extrude(height=0.6, center=true)
-        scale([1+(ctr_scale_c-1)*w, 1+(ctr_scale_t-1)*w])
-            translate([-0.25*root, 0]) polygon(af(root, 0.02, 0.4, 0.12));
+module body_slice(z) {
+    translate([0,0,z]) linear_extrude(height=0.6, center=true)
+        polygon(bsec_pts(z));
 }
-
-module body_loft() {
-    zs = [-body_w/2, -body_w/3, -body_w/6, 0,
-           body_w/6,  body_w/3,  body_w/2];
+module blend_loft() {
+    zs = [for (i=[0:16]) -blend_hw + i*(2*blend_hw/16)];
     for (i=[0:len(zs)-2]) hull() { body_slice(zs[i]); body_slice(zs[i+1]); }
 }
 
-module nacelle_form() {     // smooth teardrop, motor lives inside
-    hull() {
-        translate([170, nac_y, 0]) sphere(r=9);
-        translate([265, nac_y, 0]) sphere(r=26);
-        translate([330, nac_y, 0]) sphere(r=24);
-        translate([404, nac_y, 0]) sphere(r=14);
-    }
+module slot_cut() {     // the prop slot through the TE deck
+    translate([slot_x0, -45, -slot_hz])
+        cube([slot_x1-slot_x0, 95, 2*slot_hz]);
 }
 
 module hatch_box() { translate([-0.25*root+40, 6, -22]) cube([190, 60, 44]); }
 
-module body() {
+module body() {         // center piece, |z| <= 50
     difference() {
-        union() { body_loft(); nacelle_form(); }
+        intersection() {
+            union() {
+                blend_loft();
+                // subtle blister over the buried motor bell
+                hull() { translate([252, 12, 0]) sphere(r=20);
+                         translate([285, 10, 0]) sphere(r=15); }
+            }
+            translate([-200, -100, -body_w/2]) cube([700, 200, body_w]);
+        }
         // main cavity (battery over the CG, electronics behind)
         translate([-0.25*root+22, -12, -body_w/2+8])
             cube([0.62*root, 26, body_w-16]);
-        // nose camera bay + lens aperture (O4 cam looks out the LE)
+        // nose camera bay + lens aperture
         translate([-0.25*root-6, -8, -14]) cube([38, 18, 28]);
         translate([-0.25*root-12, 2, 0]) rotate([0,90,0]) cylinder(d=20, h=16);
-        // motor cavity (2814 fits Ø36) + face slots 16x16..19x19 + shaft
-        translate([368, nac_y, 0]) rotate([0,90,0]) cylinder(d=36, h=60);
-        translate([402, nac_y, 0]) rotate([0,90,0]) {
-            cylinder(d=10, h=20);
+        slot_cut();
+        // motor cavity ahead of the slot; the motor face-bolts to the
+        // slot's front wall from inside the slot (16x16..19x19 slots)
+        translate([238, mot_y, 0]) rotate([0,90,0])
+            cylinder(d=37, h=slot_x0-240);
+        translate([slot_x0-10, mot_y, 0]) rotate([0,90,0]) {
+            cylinder(d=10, h=24);
             for (a=[45,135,225,315]) rotate([0,0,a]) hull() {
-                translate([8,0,0])    cylinder(d=m3, h=20);
-                translate([13.5,0,0]) cylinder(d=m3, h=20);
+                translate([8,0,0])    cylinder(d=m3, h=24);
+                translate([13.5,0,0]) cylinder(d=m3, h=24);
             }
         }
-        // nacelle cooling intake (top) — motor heat must escape
-        translate([245, nac_y+18, 0]) cylinder(d=10, h=20, center=true);
-        // spar + pin channels into both wing roots (meet at center)
+        // cooling intake over the motor
+        translate([250, 20, 0]) cylinder(d=9, h=26, center=true);
+        // spar + pin channels into both wing roots
         for (s=[0,1]) mirror([0,0,s]) {
             angled_hole(0, 5, slope, spar_d, 0, body_w/2+1);
             angled_hole((0.65-0.25)*root, 4, 0.377, pin_d, 0, body_w/2+1);
         }
-        // flush hatch opening (the cut piece prints as the lid)
         hatch_box();
-        // hatch screws
         for (x=[-0.25*root+52, -0.25*root+215]) translate([x, 12, 0])
             rotate([-90,0,0]) cylinder(d=m3, h=46);
         // CG dimples on the belly — balance HERE
@@ -209,14 +238,29 @@ module body() {
     }
 }
 
+// blend fairing, one per side (z 50..120) — carries spar + slot end
+module fairing() {
+    difference() {
+        intersection() {
+            blend_loft();
+            translate([-200, -100, body_w/2]) cube([700, 200, blend_hw-body_w/2]);
+        }
+        slot_cut();
+        angled_hole(0, 5, slope, spar_d, 30, blend_hw+1);
+        angled_hole((0.65-0.25)*root, 4, 0.377, pin_d, 30, blend_hw+1);
+    }
+}
+
 // the lid IS the cut-out skin: identical curvature, flush fit.
 // Slice with 0.3 mm XY compensation (or scale 99.5% in XZ).
 module hatch() {
     difference() {
-        intersection() { body_loft(); hatch_box(); }
+        intersection() { blend_loft(); hatch_box(); }
         translate([0,-3,0]) hatch_box();    // keep 3 mm of skin
     }
 }
+
+echo(str(">>> prop: FIXED 8x6 at x=", prop_x, " inside the slot — do not use folding blades"));
 
 /* ---------------- winglet (raked) ---------------- */
 module winglet() {
@@ -231,15 +275,17 @@ module winglet() {
 
 /* ---------------- layout / selector ---------------- */
 module layout() {
-    color("orange") body();
-    color("gray")   translate([0,0, body_w/2]) wing_half();
-    color("gray")   mirror([0,0,1]) translate([0,0, body_w/2]) wing_half();
-    color("orange") translate([slope*half, 30, body_w/2+half]) rotate([90,0,0]) winglet();
+    color("white") body();
+    for (s=[0,1]) color("white") mirror([0,0,s]) fairing();
+    color("lightgray") translate([0,0, body_w/2]) wing_half();
+    color("lightgray") mirror([0,0,1]) translate([0,0, body_w/2]) wing_half();
+    color("white") translate([slope*half, 30, body_w/2+half]) rotate([90,0,0]) winglet();
 }
 
 if (part=="layout") layout();
 else if (part=="wing_seg") mirror([0,0,side<0?1:0]) wing_seg(seg);
-else if (part=="elevon")   mirror([0,0,side<0?1:0]) elevon();
+else if (part=="elevon")   mirror([0,0,side<0?1:0]) elevon(seg);
+else if (part=="fairing")  mirror([0,0,side<0?1:0]) fairing();
 else if (part=="body")     body();
 else if (part=="hatch")    hatch();
 else if (part=="winglet")  winglet();

@@ -25,13 +25,17 @@ ROOT, TIP, HALF = 380.0, 220.0, 700.0
 SWEEP_LE = 25.0          # deg
 WASHOUT = 4.0            # deg, tip nose-down
 BODY_W = 100.0           # center body width (z -50..+50)
-HINGE_F, ELEV_Z0 = 0.72, 350.0
+HINGE_F, ELEV_Z0 = 0.72, 385.0
 LAM = TIP / ROOT
 SLOPE = math.tan(math.radians(SWEEP_LE)) - 0.25 * (ROOT - TIP) / HALF
 SY_TIP = (0.09 * TIP) / (0.12 * ROOT)
-CTR_SC = 420.0 / ROOT                       # blended centerline chord scale
+CTR_SC = 470.0 / ROOT                       # centerline chord scale (TE deck)
 CTR_ST = (0.16 * 420.0) / (0.12 * ROOT)     # centerline thickness scale
-NAC_Y = 8.0                                 # nacelle axis height
+BLEND_HW = 120.0                            # body blend half-width
+SLOT_X0, SLOT_X1 = 294.0, 318.0             # prop slot fore-aft opening
+SLOT_HZ = 108.0                             # slot half-span
+PROP_X, PROP_R = 306.0, 101.5               # 8x6 prop, fully recessed
+MOT_Y = 8.0                                 # motor/prop axis height
 MAC = 2 / 3 * ROOT * (1 + LAM + LAM**2) / (1 + LAM)
 YMAC = (HALF / 3) * (1 + 2 * LAM) / (1 + LAM)
 CG_LE = YMAC * math.tan(math.radians(SWEEP_LE)) + 0.25 * MAC - 0.08 * MAC
@@ -68,9 +72,12 @@ def wing_station(zw):
             sx * X0 * math.sin(a) + sy * Y0 * math.cos(a))
 
 def body_station(zb):
-    """blended body section at |zb| <= BODY_W/2 (cosine loft)."""
-    w = (1 + math.cos(math.pi * zb / (BODY_W / 2))) / 2
-    return (X0 * (1 + (CTR_SC - 1) * w), Y0 * (1 + (CTR_ST - 1) * w))
+    """blended body section at |zb| <= BLEND_HW: cosine point-morph
+    between the local wing section and the fat centerline section."""
+    w = (1 + math.cos(math.pi * zb / BLEND_HW)) / 2
+    wx, wy = wing_station(max(0.0, abs(zb) - BODY_W / 2))
+    return ((1 - w) * wx + w * CTR_SC * X0,
+            (1 - w) * wy + w * CTR_ST * Y0)
 
 # ---------------- mesh (stored in PLOT coords: X, span, up) ----------------
 faces, basecols, normals = [], [], []
@@ -83,14 +90,20 @@ def add_face(pts_model, color):
     basecols.append(np.array(matplotlib.colors.to_rgb(color)))
     normals.append(n / nn if nn > 0 else np.array([0, 0, 1.0]))
 
-def loft(stations, zs, color_fn):
+def in_slot(pts):
+    """True if a quad lies inside the prop-slot cutout."""
+    return all(SLOT_X0 < p[0] < SLOT_X1 and abs(p[2]) < SLOT_HZ for p in pts)
+
+def loft(stations, zs, color_fn, skip=None):
     for k in range(len(zs) - 1):
         xa, ya = stations[k]; xb, yb = stations[k + 1]
         zm = (zs[k] + zs[k + 1]) / 2
         for i in range(len(xa) - 1):
-            add_face([(xa[i], ya[i], zs[k]), (xa[i+1], ya[i+1], zs[k]),
-                      (xb[i+1], yb[i+1], zs[k+1]), (xb[i], yb[i], zs[k+1])],
-                     color_fn(zm, (FRAC[i] + FRAC[i + 1]) / 2))
+            quad = [(xa[i], ya[i], zs[k]), (xa[i+1], ya[i+1], zs[k]),
+                    (xb[i+1], yb[i+1], zs[k+1]), (xb[i], yb[i], zs[k+1])]
+            if skip and skip(quad):
+                continue
+            add_face(quad, color_fn(zm, (FRAC[i] + FRAC[i + 1]) / 2))
 
 def wing_color(zm, f):
     zl = abs(zm) - BODY_W / 2
@@ -101,31 +114,28 @@ def wing_color(zm, f):
     return C_WHITE
 
 def build():
-    # wing halves
+    # wing halves — the blended body covers |z| <= 120 (zw 0..70)
     for side in (+1, -1):
-        zw = np.concatenate([np.linspace(0, ELEV_Z0, 10),
-                             np.linspace(ELEV_Z0, HALF, 16)[1:]])
+        zw = np.concatenate([np.linspace(70, ELEV_Z0, 10),
+                             np.linspace(ELEV_Z0, HALF, 14)[1:]])
         secs = [wing_station(z) for z in zw]
         zs = side * (zw + BODY_W / 2)
         loft(secs, zs, wing_color)
         xt, yt = secs[-1]
         add_face(np.column_stack([xt, yt, np.full_like(xt, zs[-1])]), C_WHITE)
-    # blended body
-    zb = np.linspace(-BODY_W / 2, BODY_W / 2, 15)
-    loft([body_station(z) for z in zb], zb, lambda zm, f: C_WHITE)
-    # nacelle: smooth teardrop of revolution around (x, NAC_Y, 0)
-    xs = np.array([168, 200, 240, 280, 320, 360, 395, 416])
-    rs = np.array([3.5, 16, 23.5, 26, 24.5, 20, 13.5, 5])
-    th = np.linspace(0, 2 * math.pi, 30)
-    rings = [np.column_stack([np.full_like(th, x), NAC_Y + r * np.cos(th),
-                              r * np.sin(th)]) for x, r in zip(xs, rs)]
-    for a, b in zip(rings, rings[1:]):
-        for i in range(len(th) - 1):
-            add_face([a[i], a[i+1], b[i+1], b[i]], C_WHITE)
-    add_face(rings[0], C_WHITE); add_face(rings[-1][::-1], C_WHITE)
-    # spinner cone
-    sxs, srs = [424, 436, 448], [12.5, 9, 2.5]
-    srings = [np.column_stack([np.full_like(th, x), NAC_Y + r * np.cos(th),
+    # blended body + TE deck, with the prop slot cut out of the skin
+    zb = np.linspace(-BLEND_HW, BLEND_HW, 31)
+    loft([body_station(z) for z in zb], zb, lambda zm, f: C_WHITE,
+         skip=in_slot)
+    # slot interior walls (dark, suggest depth)
+    add_face([(SLOT_X0, -5, -SLOT_HZ), (SLOT_X0, 13, -SLOT_HZ),
+              (SLOT_X0, 13, SLOT_HZ), (SLOT_X0, -5, SLOT_HZ)], "#565b62")
+    add_face([(SLOT_X1, -4, -62), (SLOT_X1, 11, -62),
+              (SLOT_X1, 11, 62), (SLOT_X1, -4, 62)], "#494e55")
+    # hub spinner inside the slot
+    th = np.linspace(0, 2 * math.pi, 26)
+    sxs, srs = [PROP_X, PROP_X + 6, PROP_X + 12], [8.5, 6.5, 2.5]
+    srings = [np.column_stack([np.full_like(th, x), MOT_Y + r * np.cos(th),
                                r * np.sin(th)]) for x, r in zip(sxs, srs)]
     for a, b in zip(srings, srings[1:]):
         for i in range(len(th) - 1):
@@ -156,8 +166,8 @@ def build():
                      C_WHITE)
 
 def prop_overlay():
-    """transparent prop disc + two slender blades (drawn last)."""
-    cx, cy, r = 434.0, NAC_Y, 114.0
+    """transparent prop disc + two slender blades, inside the slot."""
+    cx, cy, r = PROP_X, MOT_Y, PROP_R
     th = np.linspace(0, 2 * math.pi, 80)
     disc = np.column_stack([np.full_like(th, cx), th * 0 + cy + r*np.cos(th),
                             r * np.sin(th)])[:, :]
@@ -228,8 +238,8 @@ ax_top.scatter([CG_X], [0], [85], marker="x", s=60, color="#cc2222",
 ax_top.text(CG_X, -380, 85, f"CG {CG_LE:.0f} mm aft of nose",
             fontsize=8, color="#cc2222", ha="center")
 ax_top.text(395, 545, 70, "elevon", fontsize=8, color="#555", ha="center")
-ax_top.text(300, 250, 70, "nacelle", fontsize=8, color="#555", ha="center")
-ax_top.text(478, -250, 70, "prop", fontsize=8, color="#555", ha="center")
+ax_top.text(415, 245, 70, "recessed\nprop slot", fontsize=8, color="#555",
+            ha="center")
 ax_top.text(-115, 220, 70, "O4 cam", fontsize=8, color="#555", ha="center")
 ax_top.text(330, -660, 70, "winglet", fontsize=8, color="#555", ha="center")
 ax_top.set_title("top — 25° sweep, elevons outboard", fontsize=9.5,
@@ -242,7 +252,7 @@ ax_front.set_title("front — 4° washout (tips ride nose-down)",
 
 ax_side = fig.add_subplot(gs[2, 2], projection="3d")
 draw(ax_side, persp=False, elev=3, azim=89.9, zoom=2.5)
-ax_side.set_title("side — blended body, integrated pusher nacelle",
+ax_side.set_title("side — one continuous profile, prop hidden in the slot",
                   fontsize=9.5, color="#333", pad=1)
 
 # ---------------- spec sheet ----------------
@@ -250,18 +260,18 @@ ax_spec = fig.add_subplot(gs[3, 2]); ax_spec.set_axis_off()
 specs = (
     " MANTA-1500  ·  SPECIFICATIONS\n"
     " ───────────────────────────────────────\n"
-    " span / area          1,500 mm · 0.45 m²\n"
+    " span / area          1,500 mm · 0.47 m²\n"
     " airfoil              NACA 2412 → 2409\n"
     " sweep / washout      25° / 4°\n"
-    " all-up weight        1.78 kg (880 g pack)\n"
-    " wing loading         4.0 kg/m²\n"
+    " all-up weight        1.80 kg (880 g pack)\n"
+    " wing loading         3.8 kg/m²\n"
     " stall / cruise       7.5 / 14–15 m/s\n"
-    " cruise power         ~53 W\n"
-    " endurance            ~3.5 h (8–10 h solar)\n"
-    " range (still air)    ~170 km\n"
+    " cruise power         ~58 W\n"
+    " endurance            ~3.2 h (6–8 h solar)\n"
+    " range (still air)    ~160 km\n"
     " battery              6S2P Li-Ion · 216 Wh\n"
     " video                DJI O4 Air Unit Pro\n"
-    " motor                2814 900KV · 9×6 pusher\n"
+    " motor                2814 900KV · 8×6 in slot\n"
     " CG                   201 mm aft of nose\n"
     " autonomy             ArduPilot · RTL at 10%\n"
     " ───────────────────────────────────────\n"
@@ -275,9 +285,9 @@ ax_spec.text(0.05, 0.98, specs, family="monospace", fontsize=8.4,
 fig.suptitle("MANTA-1500 — 3D-printed flying wing (design mockup)",
              fontsize=17, fontweight="bold", color="#23272d", y=0.972)
 fig.text(0.5, 0.912,
-         "blended-wing body · integrated pusher nacelle · gloss white finish ·"
-         " LW-PLA flying surfaces, PETG core · DJI O4 Air Unit Pro behind the"
-         " nose aperture · ~3.5 h cruise",
+         "one solid wing: prop fully recessed in a trailing-edge slot ·"
+         " blended-wing body · gloss white · LW-PLA flying surfaces, PETG core ·"
+         " DJI O4 Air Unit Pro behind the nose aperture · ~3.2 h cruise",
          ha="center", fontsize=10, color="#4a5058")
 
 out = os.path.join(os.path.dirname(__file__) or ".", "..", "renders")

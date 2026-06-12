@@ -7,10 +7,10 @@ and the next one is just an airframe.
 
 | | **HELIOS-10** (quad) | **SKYLARK-1600** (plane) | **MANTA-1500** (flying wing) |
 |---|---|---|---|
-| Endurance (battery) | ~72 min hover / 60+ min missions | **~3 h** | **~3.5 h** |
-| Cruise/hover power | 154 W | 61 W | 53 W |
-| Range (still air) | ~25 km | ~150 km | ~170 km |
-| Onboard solar at midday | ~3 W (2% — physics says no) | ~33 W (+55% endurance) | ~44 W (**8–10 h** in summer sun) |
+| Endurance (battery) | ~72 min hover / 60+ min missions | **~3 h** | **~3.2 h** |
+| Cruise/hover power | 154 W | 61 W | 58 W |
+| Range (still air) | ~25 km | ~150 km | ~160 km |
+| Onboard solar at midday | ~3 W (2% — physics says no) | ~33 W (+55% endurance) | ~44 W (**6–8 h** in summer sun) |
 | Takeoff / landing | anywhere, vertical | hand launch / belly land | hand launch / belly land |
 | Strengths | hover, precision, tight spaces | stable camera, easy to fly | max endurance + solar |
 | Docs | this file | [README-SKYLARK.md](README-SKYLARK.md) | [README-MANTA.md](README-MANTA.md) |
