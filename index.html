@@ -26,6 +26,22 @@
   #knob { position:absolute; left:50%; top:50%; width:46px; height:46px; margin:-23px 0 0 -23px; border-radius:50%; background:rgba(255,255,255,.5); }
   #hint { position:fixed; top:max(14px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#fff; padding:8px 14px; border-radius:8px; font-size:13px; text-align:center; pointer-events:none; transition:opacity 1s; white-space:nowrap; }
   #loading { position:fixed; inset:0; background:#2c3e50; color:#fff; display:flex; align-items:center; justify-content:center; font-size:20px; z-index:10; }
+  #menuBtn { position:fixed; left:max(12px, env(safe-area-inset-left)); top:max(12px, env(safe-area-inset-top)); height:38px; padding:0 14px; border-radius:8px; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.3); color:#fff; font-size:14px; display:flex; align-items:center; gap:7px; }
+  #menuBtn:active { background:rgba(255,255,255,.2); }
+  #menuBtn canvas { width:22px; height:22px; image-rendering:pixelated; border-radius:3px; }
+  #blockMenu { position:fixed; inset:0; background:rgba(0,0,0,.55); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; z-index:20; }
+  #blockMenu.open { display:flex; }
+  #blockPanel { background:rgba(28,32,38,.97); border:1px solid rgba(255,255,255,.15); border-radius:16px; padding:16px; width:min(92vw,440px); max-height:82vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #blockPanel h2 { color:#fff; font-size:16px; font-weight:600; margin-bottom:4px; text-align:center; }
+  #blockPanel p.sub { color:#9aa4b0; font-size:12px; text-align:center; margin-bottom:14px; }
+  #blockGrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(78px,1fr)); gap:9px; }
+  .bcell { background:rgba(255,255,255,.06); border:2px solid rgba(255,255,255,.12); border-radius:11px; padding:9px 4px 7px; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .bcell:active { background:rgba(255,255,255,.18); }
+  .bcell.sel { border-color:#7ad17a; background:rgba(122,209,122,.12); }
+  .bcell canvas { width:42px; height:42px; image-rendering:pixelated; border-radius:4px; pointer-events:none; }
+  .bcell span { color:#dfe4ea; font-size:11px; }
+  #blockClose { margin-top:14px; width:100%; padding:11px; border-radius:11px; background:rgba(255,255,255,.12); color:#fff; font-size:15px; text-align:center; }
+  #blockClose:active { background:rgba(255,255,255,.22); }
 </style>
 </head>
 <body>
@@ -35,6 +51,15 @@
 <div id="hotbar"></div>
 <div id="jumpBtn" class="ui-el">&#9650;</div>
 <div id="resetBtn" class="ui-el">&#10227;</div>
+<div id="menuBtn" class="ui-el"><span>Blocks</span></div>
+<div id="blockMenu" class="ui-el">
+  <div id="blockPanel">
+    <h2>Choose a block</h2>
+    <p class="sub">It goes into your selected hotbar slot</p>
+    <div id="blockGrid"></div>
+    <div id="blockClose">Close</div>
+  </div>
+</div>
 <div id="hint">Left side: move &nbsp;&bull;&nbsp; Right side: look &nbsp;&bull;&nbsp; Tap: mine / place</div>
 <div id="loading">Generating world&hellip;</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -333,6 +358,7 @@ function rayFromCamera() {
 const PW = 0.3, PH = 1.8, EYE = 1.62;
 const GRAV = 30, JUMP_V = 8.7, SPEED = 4.5;
 const player = { x: W / 2 + 0.5, y: 0, z: D / 2 + 0.5, vx: 0, vy: 0, vz: 0, grounded: false };
+let prevX = player.x, prevY = player.y, prevZ = player.z; // for render interpolation
 
 function playerBoxHits(px, py, pz) {
   const e = 1e-7;
@@ -349,12 +375,17 @@ function physics(dt) {
   const head = getBlock(Math.floor(player.x), Math.floor(player.y + EYE), Math.floor(player.z));
   const inWater = feet === WATER || head === WATER;
 
-  // Horizontal velocity from input
+  // Horizontal velocity from input, eased toward the target so starts/stops
+  // feel smooth instead of snapping (framerate-independent exponential blend).
   const yaw = camera.rotation.y;
   const f = input.forward, r = input.right;
   const mul = SPEED * (inWater ? 0.6 : 1);
-  player.vx = (-Math.sin(yaw) * f + Math.cos(yaw) * r) * mul;
-  player.vz = (-Math.cos(yaw) * f - Math.sin(yaw) * r) * mul;
+  const wishX = (-Math.sin(yaw) * f + Math.cos(yaw) * r) * mul;
+  const wishZ = (-Math.cos(yaw) * f - Math.sin(yaw) * r) * mul;
+  const rate = inWater ? 8 : (player.grounded ? 16 : 7);
+  const k = 1 - Math.exp(-rate * dt);
+  player.vx += (wishX - player.vx) * k;
+  player.vz += (wishZ - player.vz) * k;
 
   if (inWater) {
     player.vy -= GRAV * 0.25 * dt;
@@ -386,8 +417,6 @@ function physics(dt) {
     player.vy = 0;
   }
   if (player.y < -10) spawn(); // safety net
-
-  camera.position.set(player.x, player.y + EYE, player.z);
 }
 
 function spawn() {
@@ -404,6 +433,7 @@ function spawn() {
   player.x = best.x + 0.5; player.z = best.z + 0.5;
   player.y = best.h + 1.01;
   player.vx = player.vy = player.vz = 0;
+  prevX = player.x; prevY = player.y; prevZ = player.z; // avoid interpolating across the teleport
 }
 
 // ---------------- Input ----------------
@@ -418,26 +448,82 @@ const HOTBAR = [
 ];
 let selSlot = 0;
 const hotbarEl = document.getElementById("hotbar");
+const slotEls = [];
+
+// Draw a block's texture into a fresh 16x16 canvas (CSS scales it up, pixelated).
+function blockIcon(block) {
+  const c = document.createElement("canvas");
+  c.width = 16; c.height = 16;
+  const cc = c.getContext("2d");
+  cc.imageSmoothingEnabled = false;
+  const t = TILES[block].side;
+  cc.drawImage(atlasCanvas, (t % 4) * 16, Math.floor(t / 4) * 16, 16, 16, 0, 0, 16, 16);
+  return c;
+}
+function renderSlot(el, item) {
+  el.textContent = "";
+  if (item.mine) el.textContent = item.label;
+  else el.appendChild(blockIcon(item.block));
+}
 HOTBAR.forEach((item, i) => {
   const el = document.createElement("div");
   el.className = "slot ui-el" + (i === 0 ? " sel" : "");
-  if (item.mine) el.textContent = item.label;
-  else {
-    const c = document.createElement("canvas");
-    c.width = 16; c.height = 16;
-    const cc = c.getContext("2d");
-    cc.imageSmoothingEnabled = false;
-    const t = TILES[item.block].side;
-    cc.drawImage(atlasCanvas, (t % 4) * 16, Math.floor(t / 4) * 16, 16, 16, 0, 0, 16, 16);
-    el.appendChild(c);
-  }
+  renderSlot(el, item);
   el.addEventListener("pointerdown", (e) => { e.preventDefault(); selectSlot(i); });
   hotbarEl.appendChild(el);
+  slotEls.push(el);
 });
 function selectSlot(i) {
   selSlot = i;
-  hotbarEl.querySelectorAll(".slot").forEach((s, j) => s.classList.toggle("sel", j === i));
+  slotEls.forEach((s, j) => s.classList.toggle("sel", j === i));
 }
+
+// ---------------- Block picker menu ----------------
+const MENU_BLOCKS = [
+  { block: GRASS, name: "Grass" }, { block: DIRT, name: "Dirt" },
+  { block: STONE, name: "Stone" }, { block: SAND, name: "Sand" },
+  { block: LOG, name: "Wood" }, { block: PLANK, name: "Planks" },
+  { block: LEAVES, name: "Leaves" }, { block: SNOW, name: "Snow" },
+  { block: WATER, name: "Water" }, { block: BEDROCK, name: "Bedrock" },
+];
+let menuOpen = false;
+const blockMenuEl = document.getElementById("blockMenu");
+const blockGridEl = document.getElementById("blockGrid");
+const menuBtn = document.getElementById("menuBtn");
+menuBtn.insertBefore(blockIcon(GRASS), menuBtn.firstChild);
+
+MENU_BLOCKS.forEach((b) => {
+  const cell = document.createElement("div");
+  cell.className = "bcell ui-el";
+  cell.dataset.block = b.block;
+  cell.appendChild(blockIcon(b.block));
+  const sp = document.createElement("span");
+  sp.textContent = b.name;
+  cell.appendChild(sp);
+  cell.addEventListener("pointerdown", (e) => { e.preventDefault(); pickBlock(b.block); });
+  blockGridEl.appendChild(cell);
+});
+
+function pickBlock(block) {
+  let slot = selSlot;
+  if (HOTBAR[slot].mine) slot = 1; // keep the pickaxe in slot 0
+  HOTBAR[slot] = { block };
+  renderSlot(slotEls[slot], HOTBAR[slot]);
+  selectSlot(slot);
+  closeMenu();
+}
+function openMenu() {
+  menuOpen = true;
+  if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+  const active = HOTBAR[selSlot].mine ? null : HOTBAR[selSlot].block;
+  blockGridEl.querySelectorAll(".bcell").forEach((c) =>
+    c.classList.toggle("sel", Number(c.dataset.block) === active));
+  blockMenuEl.classList.add("open");
+}
+function closeMenu() { menuOpen = false; blockMenuEl.classList.remove("open"); }
+menuBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); openMenu(); });
+document.getElementById("blockClose").addEventListener("pointerdown", (e) => { e.preventDefault(); closeMenu(); });
+blockMenuEl.addEventListener("pointerdown", (e) => { if (e.target === blockMenuEl) closeMenu(); });
 
 function doAction() {
   const hit = rayFromCamera();
@@ -466,6 +552,7 @@ const LOOK_SENS = 0.0045, STICK_R = 40;
 function isUiTarget(t) { return t && t.closest && t.closest(".ui-el, #hotbar"); }
 
 window.addEventListener("touchstart", (e) => {
+  if (menuOpen) return;
   for (const t of e.changedTouches) {
     if (isUiTarget(t.target)) continue;
     e.preventDefault();
@@ -546,6 +633,8 @@ window.addEventListener("keydown", (e) => {
     const n = parseInt(e.code.slice(5), 10) - 1;
     if (n >= 0 && n < HOTBAR.length) selectSlot(n);
   }
+  if (e.code === "KeyE" || e.code === "KeyB") { menuOpen ? closeMenu() : openMenu(); }
+  if (e.code === "Escape" && menuOpen) closeMenu();
 });
 window.addEventListener("keyup", (e) => { keys[e.code] = false; });
 canvas.addEventListener("click", () => { if (document.pointerLockElement !== canvas && canvas.requestPointerLock) canvas.requestPointerLock(); });
@@ -556,7 +645,7 @@ window.addEventListener("mousemove", (e) => {
   camera.rotation.x = pitch;
 });
 window.addEventListener("mousedown", (e) => {
-  if (document.pointerLockElement !== canvas) return;
+  if (menuOpen || document.pointerLockElement !== canvas) return;
   const hit = rayFromCamera();
   if (!hit) return;
   if (e.button === 0) {
@@ -603,7 +692,19 @@ function frame(now) {
   dt = Math.min(dt, 0.05);
   pollKeys();
   acc += dt;
-  while (acc >= STEP) { physics(STEP); acc -= STEP; }
+  while (acc >= STEP) {
+    prevX = player.x; prevY = player.y; prevZ = player.z;
+    physics(STEP);
+    acc -= STEP;
+  }
+
+  // Render between physics steps for smooth motion at any refresh rate.
+  const a = acc / STEP;
+  camera.position.set(
+    prevX + (player.x - prevX) * a,
+    prevY + (player.y - prevY) * a + EYE,
+    prevZ + (player.z - prevZ) * a
+  );
 
   const hit = rayFromCamera();
   if (hit) {

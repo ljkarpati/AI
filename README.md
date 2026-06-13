@@ -20,16 +20,19 @@ Tip: in Safari use **Share → Add to Home Screen** to play fullscreen without b
 - Tap: mine the block under the crosshair (or place, if a block is selected in the hotbar)
 - ▲ button: jump (hold to keep hopping / swim up)
 - Hotbar (bottom): first slot ⛏️ = mine mode, other slots place that block
+- **Blocks** button (top left): open the block menu and pick any block to drop into your selected hotbar slot
 - ⟳ (top right): generate a fresh world
 
 **Desktop**
 - Click to capture the mouse, WASD/arrows to move, Space to jump
 - Left click: mine • Right click: place • Keys 1–8: select hotbar slot
+- E or B: open/close the block menu • Esc: close it
 
 ## Features
 
 - Procedurally generated 128×128 voxel world: hills, mountains with snow caps, sandy beaches, water, and trees
-- Mine and place blocks (grass, dirt, stone, sand, logs, planks, snow)
+- Mine and place blocks, with a block menu to pick from grass, dirt, stone, sand, wood, planks, leaves, snow, water, and bedrock
+- Smooth, acceleration-based movement with frame interpolation (no stutter between physics steps)
 - Walking, jumping, swimming, gravity and proper block collision
 - Procedural pixel-art textures (no asset files), per-face lighting and fog
 - Your edits are saved automatically in the browser (localStorage), per world seed
