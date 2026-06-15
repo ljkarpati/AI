@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-title" content="Storm Royale" />
+  <title>Storm Royale</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" type="image/png" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Game canvas -->
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="stat" id="alive-stat"><span class="stat-icon">👤</span><span id="alive-count">100</span></div>
+      <div class="stat" id="kill-stat"><span class="stat-icon">💀</span><span id="kill-count">0</span></div>
+      <div class="stat storm-stat" id="storm-stat"><span class="stat-icon">🌀</span><span id="storm-text">--</span></div>
+    </div>
+
+    <canvas id="minimap"></canvas>
+
+    <div class="hud-bottom">
+      <div id="bars">
+        <div class="bar shield-bar"><div class="bar-fill" id="shield-fill"></div><span class="bar-label" id="shield-label">0</span></div>
+        <div class="bar health-bar"><div class="bar-fill" id="health-fill"></div><span class="bar-label" id="health-label">100</span></div>
+      </div>
+      <div id="mats">
+        <div class="mat" id="mat-wood"><span class="mat-icon wood"></span><span class="mat-count">0</span></div>
+        <div class="mat" id="mat-brick"><span class="mat-icon brick"></span><span class="mat-count">0</span></div>
+        <div class="mat" id="mat-metal"><span class="mat-icon metal"></span><span class="mat-count">0</span></div>
+      </div>
+    </div>
+
+    <!-- Weapon / inventory slots -->
+    <div id="inventory"></div>
+
+    <!-- Left stick (move) -->
+    <div id="stick-left" class="stick-zone"></div>
+    <!-- Right stick (aim/fire) -->
+    <div id="stick-right" class="stick-zone"></div>
+
+    <!-- Action buttons -->
+    <div id="actions">
+      <button class="action-btn" id="btn-build" aria-label="Build mode">🧱</button>
+      <button class="action-btn small" id="btn-reload" aria-label="Reload">🔄</button>
+      <button class="action-btn small" id="btn-harvest" aria-label="Harvest">⛏️</button>
+    </div>
+
+    <!-- Build piece selector (shown in build mode) -->
+    <div id="build-bar" class="hidden">
+      <button class="build-piece" data-piece="wall">▯<small>Wall</small></button>
+      <button class="build-piece" data-piece="ramp">◹<small>Ramp</small></button>
+      <button class="build-piece" data-piece="floor">▭<small>Floor</small></button>
+      <button class="build-piece" data-piece="cone">△<small>Cone</small></button>
+    </div>
+  </div>
+
+  <!-- Start / menu screen -->
+  <div id="menu" class="overlay">
+    <div class="menu-card">
+      <h1 class="logo">STORM<span>ROYALE</span></h1>
+      <p class="tagline">Build. Battle. Survive the storm.</p>
+      <button id="btn-play" class="big-btn">DROP IN</button>
+      <button id="btn-howto" class="ghost-btn">How to play</button>
+      <p class="hint">Best on iPhone — add to Home Screen for full screen.</p>
+    </div>
+  </div>
+
+  <!-- How to play -->
+  <div id="howto" class="overlay hidden">
+    <div class="menu-card">
+      <h2>How to play</h2>
+      <ul class="howto-list">
+        <li><b>Left stick</b> — move</li>
+        <li><b>Right stick</b> — aim &amp; auto-fire</li>
+        <li><b>🧱 Build</b> — enter build mode, tap a piece, tap right stick to place</li>
+        <li><b>⛏️ Harvest</b> — hold to swing your pickaxe at trees, rocks &amp; walls for mats</li>
+        <li><b>🔄 Reload</b> — reload your weapon</li>
+        <li>Open <b>chests</b> &amp; grab <b>floor loot</b> for guns, ammo and shields</li>
+        <li>Stay inside the <b>white circle</b> — the storm hurts!</li>
+        <li>Be the <b>last one standing</b> for a Victory Royale 👑</li>
+      </ul>
+      <button id="btn-back" class="big-btn">Got it</button>
+    </div>
+  </div>
+
+  <!-- Result screen -->
+  <div id="result" class="overlay hidden">
+    <div class="menu-card">
+      <h1 id="result-title">VICTORY ROYALE</h1>
+      <p id="result-sub"></p>
+      <div class="result-stats">
+        <div><span id="res-place">#1</span><small>Placement</small></div>
+        <div><span id="res-kills">0</span><small>Eliminations</small></div>
+      </div>
+      <button id="btn-again" class="big-btn">PLAY AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
