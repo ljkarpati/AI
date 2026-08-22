@@ -1,128 +1,173 @@
-# Hermes Agent: the 40,960 vs 64,000 context crash
+# Hermes Agent on a local llama-server: correct setup
 
-## What actually went wrong
+> **This document supersedes an earlier version in this repo.** That version
+> assumed the extracted zip was the install and told you how to patch it. That
+> premise was wrong. Hermes Agent ships an installer, and almost every error in
+> this session traces back to bypassing it.
 
-There are two failures here, and they need to be untangled before either is
-fixed.
+## The actual root cause
 
-**Failure 1 — the real constraint.** `llama-server` reports a 40,960-token
-allocation; Hermes Agent refuses anything under 64,000:
+Running `python run_agent.py` from an extracted
+`hermes-agent-2026.8.19.zip` is not a supported way to start Hermes Agent.
+The consequences showed up one at a time and looked like unrelated bugs:
 
-```
-ValueError: Model qwen3-8b-instruct has a context window of 40,960 tokens,
-which is below the minimum 64,000 required by Hermes Agent
-```
+| Symptom | Real cause |
+|---|---|
+| `ModuleNotFoundError: No module named 'nemo_relay'` | Dependencies were never installed — only `fire`, `openai`, etc. were added by hand as each ImportError appeared. |
+| `ValueError: ... below the minimum 64,000` | A genuine, documented requirement. Not a bug. |
+| `AttributeError: ... no attribute 'api_mode'` | A hand edit truncated `AIAgent.__init__`. |
+| `AttributeError: ... no attribute '_compression_warning'` | The stub replacement for `agent_init.py` sets 6 attributes; the real one sets many more. |
 
-**Failure 2 — self-inflicted, and currently the blocker.** A hand edit to
-`agent_init.py` reflowed the constructor, so `AIAgent.__init__` no longer runs
-to completion. That is what produces:
+The last two are the same error twice. Replacing `agent_init.py` with a stub
+that fakes attributes cannot converge: every attribute the real `__init__`
+sets has to be discovered by crashing on it. `_compression_warning` was next;
+after it there is another, and another.
 
-```
-AttributeError: 'AIAgent' object has no attribute 'api_mode'
-```
+Also note the interpreter: `C:\Python314\`. **Hermes Agent targets Python
+3.11**, which its installer provisions through `uv`. Running it on 3.14 with
+packages hand-installed into `AppData\Roaming\Python\Python314\site-packages`
+is a second, independent source of breakage.
 
-This second error is **not** a separate bug to patch around. `api_mode`,
-`_memory_store`, `_tool_guardrails`, and `_primary_runtime` are all assigned in
-the same `__init__`; `api_mode` is simply the first one something reads
-afterwards. Adding an `api_mode` attribute by hand would move the crash to the
-next missing attribute, not fix it. Restore the file, then change behaviour
-through a mechanism that cannot corrupt syntax.
+## Fix: install it properly
 
-## Fix order
-
-### Step 1 — put the damaged files back
-
-Network restrictions are not actually in the way. The extracted path
-`hermes-agent-2026.8.19\hermes-agent-2026.8.19` is doubled, which is what
-`Expand-Archive` produces from a zip — so the original archive is very likely
-still in `Downloads`. No re-download required.
+Everything else follows from this. On Windows PowerShell:
 
 ```powershell
-.\scripts\Repair-HermesInstall.ps1 -Verify     # survey, changes nothing
-.\scripts\Repair-HermesInstall.ps1 -Restore    # re-extract and copy back
+iex (irm https://hermes-agent.nousresearch.com/install.ps1)
 ```
 
-`-Verify` also prints every site enforcing the 64k floor and every config file
-under the install root, which is what Step 3 needs.
+This provisions `uv`, Python 3.11, Node.js v22, ripgrep and ffmpeg, and lands a
+managed install at `C:\Users\lemon\.hermes\hermes-agent`. Then:
 
-If the zip is gone: File Explorer → right-click the folder → *Restore previous
-versions*, or the Recycle Bin. Do not keep editing the damaged files by hand.
+```powershell
+hermes doctor
+```
 
-### Step 2 — decide which side of the mismatch to move
+`hermes doctor` is the supported diagnostic and should complete cleanly before
+anything else is attempted.
 
-The framework wants 64,000 tokens. The server offers 40,960. Either number can
-move, but on 8 GB of VRAM they are not equally movable.
+Once installed, **delete the Downloads copy** — or at least stop running
+anything from it. Keeping a hand-modified source tree next to a managed
+install is how you end up debugging the wrong file. The stubbed
+`agent_init.py` is not worth salvaging.
+
+> The install line pipes a remote script straight into execution. That is the
+> vendor's documented method, but it does mean trusting that URL at run time.
+> If you would rather inspect it first, `irm https://hermes-agent.nousresearch.com/install.ps1 -OutFile install.ps1`,
+> read it, then run it. If the earlier network restrictions block the fetch,
+> that has to be resolved first — there is no supported offline install.
+
+## Config lives somewhere else than you were editing
+
+Hermes reads `~/.hermes/config.yaml` — on your machine
+`C:\Users\lemon\.hermes\config.yaml`. Secrets go to `~/.hermes\.env`.
+
+The `config.yaml` inside the Downloads folder is not the operative config. Time
+spent editing it was wasted, which is worth knowing before you spend more.
+
+Set values through the CLI so they land in the right file:
+
+```powershell
+hermes model                       # interactive; choose "Custom Endpoint"
+hermes config set <key> <value>
+```
+
+For a local OpenAI-compatible server the relevant settings are
+`CUSTOM_BASE_URL` and `CUSTOM_API_KEY` (the key may be any placeholder for a
+local endpoint).
+
+## The base_url has been wrong the whole time
+
+```
+--base_url="http://127.0.0"
+```
+
+`127.0.0` is three octets. It is not a valid IPv4 address, so every request
+against it fails regardless of anything else. It needs to be:
+
+```
+http://127.0.0.1:8080/v1
+```
+
+This appeared in the original blueprint and is still in the command line being
+run. Fixing the install will not fix this; it has to be corrected explicitly.
+
+## The 64k floor is a real requirement — meet it, don't patch it
+
+The Hermes docs are explicit: *"Hermes Agent requires a model with at least
+64,000 tokens of context"*, and for local models, *"set its context size to at
+least 64K (e.g. `--ctx-size 65536` for llama.cpp)"*.
+
+So the floor is a supported, intentional constraint, not a factory default to
+be filed off. The question is whether your card can meet it.
 
 A KV cache costs `2 × layers × kv_heads × head_dim × bytes_per_element` per
 token. For Qwen3-8B (36 layers, 8 KV heads, head_dim 128) that is 144 KiB per
-token at f16. Against ~5 GB of Q4_K_M weights:
+token at f16. Against ~5 GB of Q4_K_M weights, at 65,536 tokens:
 
-| KV cache | @ 40,960 tokens | @ 65,536 tokens |
+| KV cache | KV size | + weights |
 |---|---|---|
-| f16  | 5.62 GB → **10.62 GB** | 9.00 GB → **14.00 GB** |
-| q8_0 | 2.99 GB → **7.99 GB**  | 4.78 GB → **9.78 GB**  |
-| q5_1 | 2.11 GB → **7.11 GB**  | 3.38 GB → **8.38 GB**  |
-| q4_0 | 1.58 GB → **6.58 GB**  | 2.53 GB → **7.53 GB**  |
+| f16  | 9.00 GB | **14.00 GB** |
+| q8_0 | 4.78 GB | **9.78 GB** |
+| q5_1 | 3.38 GB | **8.38 GB** |
+| q4_0 | 2.53 GB | **7.53 GB** |
 
-(Totals include weights but not the compute buffer or CUDA context, together
-roughly another 0.5–1 GB.)
+(Excludes the compute buffer and CUDA context — roughly another 0.5–1 GB.)
 
-Only the bottom-right cell fits 8 GB at all, and it leaves no headroom. **So on
-this hardware, reaching a genuine 64k context means q4_0 KV cache plus some
-layers pushed to system RAM — a real quality and speed cost.** The 40,960
-figure was a sound choice for this card.
-
-That makes the recommendation:
-
-- **Preferred:** keep the server at 40,960 and lower Hermes' floor (Step 3).
-- **Only if you need the full window:** raise the server context and accept the
-  degradation:
+**Only q4_0 fits 8 GB, and it leaves no headroom.** So 64k is reachable on your
+hardware, but only with a quantised KV cache and probably a few layers pushed
+to system RAM:
 
 ```powershell
-.\scripts\Start-LlamaServer.ps1 -ModelPath C:\models\qwen3-8b-instruct-q4_k_m.gguf `
-    -ContextSize 65536 -CacheType q4_0 -GpuLayers 32
+llama-server --model C:\models\qwen3-8b-instruct-q4_k_m.gguf `
+  --ctx-size 65536 --flash-attn `
+  --cache-type-k q4_0 --cache-type-v q4_0 `
+  --n-gpu-layers 32 --host 127.0.0.1 --port 8080
 ```
 
-The script prints the VRAM estimate before launching, refuses to start if the
-port is already bound, and probes `/props` afterwards to report the context the
-server *actually* allocated — which is frequently lower than what was asked for.
+`--flash-attn` is required for a quantised V cache. Drop `--n-gpu-layers` further
+if it OOMs. `scripts/Start-LlamaServer.ps1` prints this estimate before
+launching and then probes `/props` to report the context actually allocated,
+which is often lower than requested.
 
-Check a server that is already running:
+If q4_0 quality proves unacceptable, the honest options are a smaller model
+(so the weights leave more room for cache) or more VRAM — not a lower floor.
+
+## Getting the web dashboard up
+
+This is what you were reaching for with the Vite build on ports 5173/9999.
+Those were the wrong target — the dashboard is served by Hermes itself:
 
 ```powershell
-.\scripts\Start-LlamaServer.ps1 -ProbeOnly
+cd $env:USERPROFILE\.hermes\hermes-agent
+uv pip install -e ".[web,pty]"     # base install has no HTTP layer
+hermes doctor
+hermes dashboard                    # http://127.0.0.1:9119
 ```
 
-### Step 3 — lower the floor without breaking the source
+Notes:
 
-```powershell
-python .\scripts\hermes_ctx_patch.py --root "<install-root>"                       # dry run
-python .\scripts\hermes_ctx_patch.py --root "<install-root>" --min-ctx 32768 --apply
-python .\scripts\hermes_ctx_patch.py --root "<install-root>" --revert              # undo
-```
+- **9119** is the default port, not 9999 or 5173.
+- The `web` extra pulls in FastAPI/Uvicorn; without it the dashboard cannot
+  start. `[all]` installs everything.
+- `pty` (embedded chat terminal) is POSIX-only, so on Windows expect
+  `".[web]"` to be the useful target if `pty` fails to build.
+- Don't use `hermes dashboard --port 8080` — that collides with llama-server.
+- On loopback there's no auth. Binding `--host 0.0.0.0` requires configuring an
+  auth provider first; the server refuses to start otherwise. Leave it on
+  127.0.0.1 unless you specifically need remote access.
 
-This is still a patch against vendored source, but it cannot repeat the earlier
-failure. It rewrites **only** the integer literal — never a line, never
-whitespace — backs up each file, byte-compiles it afterwards, and restores the
-backup automatically if the file stops compiling. `1.64000` and `640000` are
-left alone; `64_000` is caught. The literal inside the error message is
-rewritten too, so the text does not contradict the check.
+## About `hermes_ctx_patch.py`
 
-Set the floor to `32768`, not to something tiny. Hermes' 64k default is not
-arbitrary — a long agent loop with tool schemas, history, and retrieved context
-genuinely consumes it. At 40,960 you should expect to hit context exhaustion in
-long sessions. That is a real constraint of running an 8B model on 8 GB, not
-something the patch removes.
+That script is still in this repo, but given the above it should be treated as
+a last resort for experimentation only. Lowering a documented hard minimum
+means running the agent in a regime its authors excluded; expect degraded
+behaviour and context exhaustion in long tool-calling loops rather than a clean
+failure. Meet the 64k requirement instead.
 
-**If the script reports no matches**, the floor is declared in `config.yaml` or
-another data file rather than in Python. Prefer changing it there — a config
-value is not a patch and survives upgrades.
+## Sources
 
-## What is unverified
-
-The blueprint cites `agent_init.py:2782` and `turn_context.py:590`, and a
-`config.yaml` under `C:\Users\lemon\Downloads\...`. None of that was inspected:
-this work was done in a Linux container that cannot reach your filesystem. The
-line numbers, the config schema, and the package layout are all taken from your
-report rather than confirmed. `Repair-HermesInstall.ps1 -Verify` is the step
-that confirms them; its output is worth reading before applying anything here.
+- [Installation](https://hermes-agent.nousresearch.com/docs/getting-started/installation)
+- [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart)
+- [Web Dashboard](https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard)
+- [NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent)
