@@ -98,6 +98,19 @@ Step 'Quarantine the hand-edited source tree'
 if (-not (Test-Path -LiteralPath $StaleTree)) {
     Good 'Nothing to quarantine.'
 } else {
+    # Windows will not move a directory that is the current location of any
+    # process, including this one. Catch it here with a usable instruction
+    # rather than letting Move-Item fail with "being used by another process".
+    $here = (Get-Location).Path
+    if ($here -eq $StaleTree -or $here.StartsWith($StaleTree + [IO.Path]::DirectorySeparatorChar)) {
+        throw @"
+You are currently inside the folder this script needs to move:
+    $here
+
+Change directory out of it first, then re-run:
+    cd `$env:USERPROFILE
+"@
+    }
     $dest = "$StaleTree.broken-" + (Get-Date -Format 'yyyyMMdd-HHmmss')
     Info "This tree contains a stubbed agent_init.py and must not be run from."
     if ($DryRun) {
